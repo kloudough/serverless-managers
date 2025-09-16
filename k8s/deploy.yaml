@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-dev-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-dev-app
+  template:
+    metadata:
+      labels:
+        app: node-dev-app
+    spec:
+      containers:
+      - name: node-container
+        image: node:18 # Use the image you built
+        ports:
+        - containerPort: 3000 # The port your Node.js app listens on
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+        command: ["sleep", "infinity"] # Adjust this command to start your app in development mode    
+        # Add volume mounts for live development if needed (e.g., hostPath or PersistentVolumeClaim)
+        # volumeMounts:
+        # - name: app-code
+        #   mountPath: /app
+      # volumes:
+      # - name: app-code
+      #   hostPath:
+      #     path: /path/to/your/local/code # Adjust this path
