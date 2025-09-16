@@ -37,7 +37,7 @@ app.get('/k8s', async (req, res) => {
 let inFlightDockerRequests = 0;
 
 app.get('/docker', async (req, res) => {
-        try {
+    try {
         const { name: containerName, port } = await getDockerContainer();
         inFlightDockerRequests++;
         http.get(`http://localhost:${port}/`, (response) => {
