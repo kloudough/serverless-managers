@@ -1,7 +1,6 @@
 const { Worker, workerData } = require('worker_threads');
 const { getAvailablePort } = require('./util');
 
-let nodeWorker = null;
 const workerPool = [];
 const MAX_POOL_SIZE = 3;
 let lastWorkerRequestTime = Date.now();
