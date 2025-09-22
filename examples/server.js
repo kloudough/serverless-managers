@@ -52,6 +52,26 @@ app.get('/process', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+app.get('/worker', async (req, res) => {
+    try {
+        let worker = await workerManager.getOrCreateWorkerInPool(`${__dirname}/scripts/index.js`);
+        const { port, name: workerName } = worker;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        http.get(`http://localhost:${port}/`, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', () => {
+                res.json({ workerResponse: data, workerName, port });
+            });
+        }).on('error', (err) => {
+            res.status(500).json({ error: err.message });
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ... other endpoints
 
 app.listen(PORT, () => {
