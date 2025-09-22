@@ -1,50 +1,68 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Node.js Application Constitution (Minimal)
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### 1) Keep It Simple
+- Prefer small, composable modules over frameworks unless needed.
+- Avoid premature abstraction and configuration. Choose the simplest working solution first.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### 2) Deterministic Builds
+- Support Node.js LTS (>= 18.x). Pin engines in `package.json`.
+- Use npm with a committed `package-lock.json`. Install with `npm ci` in CI.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### 3) Explicit Runtime Configuration
+- Configuration comes from environment variables with sane defaults.
+- Mandatory vars: `NODE_ENV` (development|test|production), `PORT` (if an HTTP server is exposed).
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### 4) Basic Observability
+- Log to stdout/stderr using structured, single-line logs where possible.
+- Provide a simple health signal: either a `/health` HTTP route or a startup/ready log line.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### 5) Safe Startup and Shutdown
+- Handle process signals: `SIGINT`, `SIGTERM` to close servers, timers, and child processes gracefully.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+## Minimal Technical Requirements
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+- Node.js: 18.x LTS or newer (engines field enforced).
+- Package manager: npm (lockfile committed).
+- Required files:
+	- `package.json` with scripts: `start`, `test` (if tests exist).
+	- Entry point at `index.js` or `src/index.js`.
+	- `.gitignore` including `node_modules/` and logs.
+- Networked apps must read `PORT` and bind to `0.0.0.0` (not localhost) for containerization.
+- No secret values committed to the repo; use env vars or secret managers.
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+Example `package.json` (minimal):
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+```json
+{
+	"name": "app",
+	"version": "0.1.0",
+	"private": true,
+	"type": "commonjs",
+	"engines": { "node": ">=18" },
+	"scripts": {
+		"start": "node index.js",
+		"test": "node -e 'console.log(\"No tests\")'"
+	},
+	"dependencies": {},
+	"devDependencies": {}
+}
+```
+
+## Minimal Development Workflow and Quality Gates
+
+1) Install: `npm ci` (or `npm install` for local dev).
+2) Run: `npm start`.
+3) Test: `npm test` (ok to be a no-op initially, but present).
+4) Linting/formatting optional; if added, wire as npm scripts and keep zero-config where possible.
+
+Release/Distribution (if applicable):
+- Libraries publish as semver; apps produce Docker images with a minimal base (e.g., `node:18-alpine`).
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution sets the baseline. Add extras (lint, types, CI) incrementally and document them.
+- Changes to these minimal rules must be recorded in this file and acknowledged in PR review.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+Version: 1.0.0 | Ratified: 2025-09-22 | Last Amended: 2025-09-22
