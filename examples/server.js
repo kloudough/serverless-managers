@@ -1,7 +1,6 @@
 const express = require('express');
 const http = require('http');
-// const { DockerManager, K8sManager, ProcessManager, WorkerManager } = require('../lib');
-const { DockerManager, ProcessManager ,WorkerManager } = require('../lib');
+const { DockerManager, K8sManager, ProcessManager, WorkerManager } = require('../lib');
 const greet = require('./scripts/greet');
 
 const app = express();
@@ -9,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 // Initialize managers
 const dockerManager = new DockerManager();
-// const k8sManager = new K8sManager();
+const k8sManager = new K8sManager();
 const processManager = new ProcessManager();
 const workerManager = new WorkerManager();
 
@@ -72,7 +71,23 @@ app.get('/worker', async (req, res) => {
     }
 });
 
-// ... other endpoints
+app.get('/k8s', async (req, res) => {
+    try {
+        const scriptFiles = ['index.js', 'greet.js'];
+        const { name: podName, port } = await k8sManager.getOrCreatePodInPool(`${__dirname}/scripts`, scriptFiles);
+        http.get(`http://localhost:${port}/`, (response) => {
+            let data = '';
+            response.on('data', chunk => data += chunk);
+            response.on('end', async () => {
+                res.json({ podResponse: data, port, podName });
+            });
+        }).on('error', async (err) => {
+            res.status(500).json({ error: err.message });
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`Example server running on http://localhost:${PORT}`);
