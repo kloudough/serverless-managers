@@ -11,17 +11,24 @@ describe('WorkerManager', () => {
     let mockWorker;
 
     beforeEach(() => {
+        jest.setTimeout(60000);
         // Reset all mocks
         jest.clearAllMocks();
         
         // Mock Worker class
         mockWorker = {
             on: jest.fn(),
-            terminate: jest.fn().mockResolvedValue(undefined)
+            terminate: jest.fn().mockResolvedValue(undefined),
+            kill: jest.fn(),
+            threadId: 12345
         };
         
         Worker.mockImplementation(() => mockWorker);
         getAvailablePort.mockResolvedValue(8080);
+        
+        // Mock process event listeners
+        process.once = jest.fn();
+        process.removeAllListeners = jest.fn();
         
         // Create fresh instance
         workerManager = new WorkerManager();
@@ -31,18 +38,26 @@ describe('WorkerManager', () => {
         test('should initialize with default options', () => {
             expect(workerManager.maxPoolSize).toBe(3);
             expect(workerManager.poolCheckInterval).toBe(10000);
+            expect(workerManager.workerTimeout).toBe(30000);
+            expect(workerManager.shutdownTimeout).toBe(5000);
             expect(workerManager.workerPool).toEqual([]);
             expect(workerManager.watcherStarted).toBe(false);
+            expect(workerManager.isShuttingDown).toBe(false);
+            expect(process.once).toHaveBeenCalledTimes(3);
         });
 
         test('should initialize with custom options', () => {
             const customManager = new WorkerManager({
                 maxPoolSize: 5,
-                poolCheckInterval: 5000
+                poolCheckInterval: 5000,
+                workerTimeout: 15000,
+                shutdownTimeout: 3000
             });
             
             expect(customManager.maxPoolSize).toBe(5);
             expect(customManager.poolCheckInterval).toBe(5000);
+            expect(customManager.workerTimeout).toBe(15000);
+            expect(customManager.shutdownTimeout).toBe(3000);
         });
 
         test('should set lastWorkerRequestTime on initialization', () => {
@@ -202,7 +217,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
             expect(workerManager.lastWorkerRequestTime).toBeGreaterThanOrEqual(beforeTime);
         });
@@ -219,7 +234,7 @@ describe('WorkerManager', () => {
             
             expect(workerManager.watcherStarted).toBe(false);
             
-            await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
             expect(workerManager.watcherStarted).toBe(true);
             expect(poolWatcherSpy).toHaveBeenCalled();
@@ -238,7 +253,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
             expect(poolWatcherSpy).not.toHaveBeenCalled();
             
@@ -255,16 +270,22 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const result = await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            const result = await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
-            expect(Worker).toHaveBeenCalledWith('./test-script.js', {
-                workerData: { port: 8080, name: 'worker-8080' }
+            expect(Worker).toHaveBeenCalledWith('./examples/scripts/index.js', {
+                workerData: { port: 8080, name: expect.stringContaining('worker-8080-') },
+                resourceLimits: {
+                    maxOldGenerationSizeMb: 100,
+                    maxYoungGenerationSizeMb: 50
+                }
             });
-            expect(result.name).toBe('worker-8080');
+            expect(result.name).toMatch(/worker-8080-\d+/);
             expect(result.port).toBe(8080);
             expect(result.worker).toBe(mockWorker);
+            expect(result.createdAt).toEqual(expect.any(Number));
+            expect(result.lastUsed).toEqual(expect.any(Number));
             expect(workerManager.workerPool).toHaveLength(1);
-            expect(consoleSpy).toHaveBeenCalledWith('Started worker: worker-8080 (port 8080)');
+            expect(consoleSpy).toHaveBeenCalledWith(expect.stringMatching(/Started worker: worker-8080-\d+ \(port 8080\)/));
             
             consoleSpy.mockRestore();
         });
@@ -272,21 +293,21 @@ describe('WorkerManager', () => {
         test('should return random worker from pool when pool is full', async () => {
             // Fill the pool to max capacity
             workerManager.workerPool = [
-                { name: 'worker-1', port: 8001, worker: {} },
-                { name: 'worker-2', port: 8002, worker: {} },
-                { name: 'worker-3', port: 8003, worker: {} }
+                { name: 'worker-1', port: 8001, worker: { threadId: 1 } },
+                { name: 'worker-2', port: 8002, worker: { threadId: 2 } },
+                { name: 'worker-3', port: 8003, worker: { threadId: 3 } }
             ];
             
-            // Mock Math.random to return a specific index
-            const originalRandom = Math.random;
-            Math.random = jest.fn().mockReturnValue(0.5); // Should select index 1
+            // Mock Date.now to control round-robin selection
+            const originalDateNow = Date.now;
+            Date.now = jest.fn().mockReturnValue(2000); // Should select index 2000 % 3 = 2
             
-            const result = await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            const result = await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
-            expect(result).toBe(workerManager.workerPool[1]);
+            expect(result).toBe(workerManager.workerPool[2]);
             expect(Worker).not.toHaveBeenCalled();
             
-            Math.random = originalRandom;
+            Date.now = originalDateNow;
         });
 
         test('should throw error if worker creation fails and pool is empty', async () => {
@@ -297,14 +318,19 @@ describe('WorkerManager', () => {
                 }
             });
             
-            await expect(workerManager.getOrCreateWorkerInPool('./test-script.js'))
-                .rejects.toThrow('Worker creation failed');
+            const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+            
+            await expect(workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js'))
+                .rejects.toThrow('No workers available in pool');
+                
+            expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to create new worker'));
+            consoleWarnSpy.mockRestore();
         });
 
         test('should return existing worker if creation fails but pool has workers', async () => {
             // Add existing worker to pool
             workerManager.workerPool = [
-                { name: 'existing-worker', port: 8001, worker: {} }
+                { name: 'existing-worker', port: 8001, worker: { threadId: 123 } }
             ];
             
             // Mock worker creation failure
@@ -314,26 +340,47 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const result = await workerManager.getOrCreateWorkerInPool('./test-script.js');
+            const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+            
+            const result = await workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js');
             
             expect(result.name).toBe('existing-worker');
+            expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to create new worker'));
+            
+            consoleWarnSpy.mockRestore();
         });
 
         test('should throw error if no workers available', async () => {
             // Force pool to be full by setting maxPoolSize to 0
             workerManager.maxPoolSize = 0;
             
-            await expect(workerManager.getOrCreateWorkerInPool('./test-script.js'))
+            await expect(workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js'))
                 .rejects.toThrow('No workers available in pool');
+        });
+
+        test('should throw error if script path is not provided', async () => {
+            await expect(workerManager.getOrCreateWorkerInPool())
+                .rejects.toThrow('Script path is required');
+        });
+
+        test('should throw error if shutting down', async () => {
+            workerManager.isShuttingDown = true;
+            
+            await expect(workerManager.getOrCreateWorkerInPool('./examples/scripts/index.js'))
+                .rejects.toThrow('WorkerManager is shutting down');
         });
     });
 
     describe('createWorker', () => {
         test('should create worker with correct parameters', () => {
-            workerManager.createWorker('./test-script.js', 8080, 'test-worker');
+            workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
             
-            expect(Worker).toHaveBeenCalledWith('./test-script.js', {
-                workerData: { port: 8080, name: 'test-worker' }
+            expect(Worker).toHaveBeenCalledWith('./examples/scripts/index.js', {
+                workerData: { port: 8080, name: 'test-worker' },
+                resourceLimits: {
+                    maxOldGenerationSizeMb: 100,
+                    maxYoungGenerationSizeMb: 50
+                }
             });
         });
 
@@ -345,12 +392,14 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const result = await workerManager.createWorker('./test-script.js', 8080, 'test-worker');
+            const result = await workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
             
             expect(result).toEqual({
                 name: 'test-worker',
                 port: 8080,
-                worker: mockWorker
+                worker: mockWorker,
+                createdAt: expect.any(Number),
+                lastUsed: expect.any(Number)
             });
         });
 
@@ -362,7 +411,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            await expect(workerManager.createWorker('./test-script.js', 8080, 'test-worker'))
+            await expect(workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker'))
                 .rejects.toThrow('Worker error');
         });
 
@@ -379,7 +428,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const createWorkerPromise = workerManager.createWorker('./test-script.js', 8080, 'test-worker');
+            const createWorkerPromise = workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
             
             // Trigger online first
             setImmediate(() => onlineCallback());
@@ -392,7 +441,7 @@ describe('WorkerManager', () => {
             // Wait for message to be processed
             await new Promise(resolve => setImmediate(resolve));
             
-            expect(consoleSpy).toHaveBeenCalledWith('worker test-worker message: Test message');
+            expect(consoleSpy).toHaveBeenCalledWith('worker test-worker message:', 'Test message');
             
             consoleSpy.mockRestore();
         });
@@ -410,7 +459,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const createWorkerPromise = workerManager.createWorker('./test-script.js', 8080, 'test-worker');
+            const createWorkerPromise = workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
             
             // Trigger online first
             setImmediate(() => onlineCallback());
@@ -418,13 +467,15 @@ describe('WorkerManager', () => {
             await createWorkerPromise;
             
             // Then trigger error
-            setImmediate(() => errorCallback(new Error('Runtime error')));
+            const runtimeError = new Error('Runtime error');
+            setImmediate(() => errorCallback(runtimeError));
             
             // Wait for error to be processed
             await new Promise(resolve => setImmediate(resolve));
             
             expect(consoleErrorSpy).toHaveBeenCalledWith(
-                'worker test-worker error: Error: Runtime error'
+                'worker test-worker error:',
+                runtimeError
             );
             
             consoleErrorSpy.mockRestore();
@@ -448,7 +499,7 @@ describe('WorkerManager', () => {
                 }
             });
             
-            const createWorkerPromise = workerManager.createWorker('./test-script.js', 8080, 'test-worker');
+            const createWorkerPromise = workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
             
             // Trigger online first
             setImmediate(() => onlineCallback());
@@ -480,9 +531,11 @@ describe('WorkerManager', () => {
             expect(info).toEqual({
                 poolSize: 2,
                 maxPoolSize: 3,
+                isShuttingDown: false,
+                watcherStarted: false,
                 workers: [
-                    { name: 'worker-1', port: 8001 },
-                    { name: 'worker-2', port: 8002 }
+                    { name: 'worker-1', port: 8001, createdAt: undefined, lastUsed: undefined, alive: true },
+                    { name: 'worker-2', port: 8002, createdAt: undefined, lastUsed: undefined, alive: true }
                 ]
             });
         });
@@ -493,6 +546,8 @@ describe('WorkerManager', () => {
             expect(info).toEqual({
                 poolSize: 0,
                 maxPoolSize: 3,
+                isShuttingDown: false,
+                watcherStarted: false,
                 workers: []
             });
         });
@@ -530,8 +585,10 @@ describe('WorkerManager', () => {
             
             expect(mockWorker1.terminate).toHaveBeenCalled();
             expect(mockWorker2.terminate).toHaveBeenCalled();
-            expect(consoleSpy).toHaveBeenCalledWith('Stopped worker: worker-1');
-            expect(consoleSpy).toHaveBeenCalledWith('Stopped worker: worker-2');
+            expect(consoleSpy).toHaveBeenCalledWith('Stopping 2 workers...');
+            expect(consoleSpy).toHaveBeenCalledWith('Stopped and removed worker: worker-1');
+            expect(consoleSpy).toHaveBeenCalledWith('Stopped and removed worker: worker-2');
+            expect(consoleSpy).toHaveBeenCalledWith('All workers stopped');
             expect(workerManager.workerPool).toEqual([]);
             
             consoleSpy.mockRestore();
@@ -564,6 +621,173 @@ describe('WorkerManager', () => {
             
             await expect(workerManager.stopAllWorkers()).resolves.not.toThrow();
             expect(workerManager.workerPool).toEqual([]);
+        });
+    });
+
+    describe('shutdown', () => {
+        test('should shutdown gracefully', async () => {
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            workerManager.watcherInterval = 'mock-interval';
+            global.clearInterval = jest.fn();
+            jest.spyOn(workerManager, 'stopAllWorkers').mockResolvedValue();
+            
+            await workerManager.shutdown();
+            
+            expect(workerManager.isShuttingDown).toBe(true);
+            expect(global.clearInterval).toHaveBeenCalledWith('mock-interval');
+            expect(workerManager.stopAllWorkers).toHaveBeenCalled();
+            expect(process.removeAllListeners).toHaveBeenCalledWith('SIGINT');
+            expect(process.removeAllListeners).toHaveBeenCalledWith('SIGTERM');
+            expect(process.removeAllListeners).toHaveBeenCalledWith('beforeExit');
+            expect(consoleSpy).toHaveBeenCalledWith('WorkerManager shutting down...');
+            expect(consoleSpy).toHaveBeenCalledWith('WorkerManager shutdown complete');
+            
+            consoleSpy.mockRestore();
+        });
+
+        test('should not shutdown twice', async () => {
+            workerManager.isShuttingDown = true;
+            jest.spyOn(workerManager, 'stopAllWorkers').mockResolvedValue();
+            
+            await workerManager.shutdown();
+            
+            expect(workerManager.stopAllWorkers).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('healthCheck', () => {
+        test('should remove dead workers', async () => {
+            const deadWorker = { worker: { threadId: null }, name: 'dead-worker' };
+            const aliveWorker = { worker: { threadId: 123 }, name: 'alive-worker' };
+            
+            workerManager.workerPool = [aliveWorker, deadWorker];
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            
+            const result = await workerManager.healthCheck();
+            
+            expect(workerManager.workerPool).toEqual([aliveWorker]);
+            expect(result).toEqual({
+                totalWorkers: 1,
+                deadWorkersRemoved: 1,
+                healthy: true
+            });
+            expect(consoleSpy).toHaveBeenCalledWith('Removed 1 dead workers from pool');
+            
+            consoleSpy.mockRestore();
+        });
+
+        test('should report healthy when workers exist', async () => {
+            workerManager.workerPool = [{ worker: { threadId: 123 } }];
+            
+            const result = await workerManager.healthCheck();
+            
+            expect(result.healthy).toBe(true);
+        });
+
+        test('should report unhealthy when shutting down with no workers', async () => {
+            workerManager.isShuttingDown = true;
+            workerManager.workerPool = [];
+            
+            const result = await workerManager.healthCheck();
+            
+            expect(result.healthy).toBe(false);
+        });
+    });
+
+    describe('terminateWorker', () => {
+        test('should terminate worker with timeout', async () => {
+            const workerInfo = { name: 'test-worker', worker: mockWorker };
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            
+            await workerManager.terminateWorker(workerInfo);
+            
+            expect(mockWorker.terminate).toHaveBeenCalled();
+            expect(consoleSpy).toHaveBeenCalledWith('Stopped and removed worker: test-worker');
+            
+            consoleSpy.mockRestore();
+        });
+
+        test('should force kill worker if termination times out', async () => {
+            const workerInfo = { name: 'test-worker', worker: mockWorker };
+            // Mock terminate to hang indefinitely
+            mockWorker.terminate.mockImplementation(() => new Promise(() => {}));
+            
+            const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+            
+            // Use fake timers to control the timeout
+            jest.useFakeTimers();
+            
+            const terminatePromise = workerManager.terminateWorker(workerInfo);
+            
+            // Fast-forward past the shutdownTimeout (5000ms)
+            jest.advanceTimersByTime(5100);
+            
+            await terminatePromise;
+            
+            expect(mockWorker.kill).toHaveBeenCalled();
+            expect(consoleErrorSpy).toHaveBeenCalledWith(
+                'Error stopping worker test-worker:',
+                'Worker termination timeout'
+            );
+            
+            consoleErrorSpy.mockRestore();
+            jest.useRealTimers();
+        });
+    });
+
+    describe('removeWorkerFromPool', () => {
+        test('should remove worker by name', () => {
+            workerManager.workerPool = [
+                { name: 'worker-1', worker: {} },
+                { name: 'worker-2', worker: {} }
+            ];
+            const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
+            
+            const removed = workerManager.removeWorkerFromPool('worker-1');
+            
+            expect(workerManager.workerPool).toHaveLength(1);
+            expect(workerManager.workerPool[0].name).toBe('worker-2');
+            expect(removed.name).toBe('worker-1');
+            expect(consoleSpy).toHaveBeenCalledWith('Removed worker worker-1 from pool');
+            
+            consoleSpy.mockRestore();
+        });
+
+        test('should return null if worker not found', () => {
+            workerManager.workerPool = [{ name: 'worker-1', worker: {} }];
+            
+            const removed = workerManager.removeWorkerFromPool('non-existent');
+            
+            expect(removed).toBeNull();
+            expect(workerManager.workerPool).toHaveLength(1);
+        });
+    });
+
+    describe('createWorker timeout handling', () => {
+        test('should timeout worker creation', async () => {
+            // Mock a worker that never comes online
+            mockWorker.on.mockImplementation(() => {});
+            
+            // Use fake timers to control the timeout
+            jest.useFakeTimers();
+            
+            const createPromise = workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker');
+            
+            // Fast-forward past the workerTimeout (30000ms)
+            jest.advanceTimersByTime(30100);
+            
+            await expect(createPromise).rejects.toThrow('Worker creation timeout after 30000ms');
+            
+            jest.useRealTimers();
+        });
+
+        test('should handle worker creation errors', async () => {
+            Worker.mockImplementation(() => {
+                throw new Error('Worker creation failed');
+            });
+            
+            await expect(workerManager.createWorker('./examples/scripts/index.js', 8080, 'test-worker'))
+                .rejects.toThrow('Worker creation failed');
         });
     });
 });
