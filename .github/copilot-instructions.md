@@ -144,7 +144,36 @@ src/
 - **Do not modify files in `src/`** unless specifically updating legacy examples.
 - **Always update or add tests in `test/`** when changing library logic.
 - **Document any new dependencies or scripts** in this file and in `package.json`.
+- **License:** This project uses the MIT License. All contributions must be compatible with MIT.
+- **Contributing:** See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for guidelines.
 
 ---
+
+## License & Legal
+
+### MIT License
+
+This project is licensed under the **MIT License**, one of the most permissive and developer-friendly open-source licenses.
+
+**Why MIT?**
+- ✅ Maximum freedom for users and contributors
+- ✅ Enterprise-friendly (no copyleft restrictions)
+- ✅ Simple and widely understood
+- ✅ Standard for Node.js libraries
+- ✅ Compatible with most other licenses
+
+**What This Means for Contributors:**
+- Your contributions will be licensed under MIT
+- You retain copyright to your contributions
+- Your code can be used commercially by others
+- No CLA (Contributor License Agreement) required
+
+**Files:**
+- [LICENSE](../LICENSE) - Full license text
+- [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) - Third-party licenses
+- [CONTRIBUTING.md](.github/CONTRIBUTING.md) - Contribution guidelines
+
 **Summary:**  
 This repo is a Node.js library for managing serverless resources (Docker, K8s, processes, workers) with a clear separation between core logic (`lib/`), examples (`examples/`), and tests (`test/`). Use `npm install` and `npm test` as your primary validation steps. Follow the structure and conventions above for efficient and reliable contributions.
+
+The project is MIT-licensed for maximum flexibility and adoption.
