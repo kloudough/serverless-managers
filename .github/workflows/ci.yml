@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
   pull_request:
     branches: [ main, develop ]
 
@@ -167,3 +170,7 @@ jobs:
           echo "Lint Status: ${{ needs.lint.result }}"
           echo "Security Status: ${{ needs.security.result }}"
           echo "Build Check Status: ${{ needs.build.result }}"
+
+concurrency:
+  group: codeql-analysis-${{ github.ref }}
+  cancel-in-progress: true
