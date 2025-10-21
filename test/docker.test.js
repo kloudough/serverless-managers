@@ -286,7 +286,7 @@ describe('DockerManager', () => {
             // Mock inspect to return non-running state
             mockContainer.inspect.mockResolvedValue({ State: { Running: false } });
             
-            const result = await dockerManager.getOrCreateContainerInPool('/path/to/script');
+            await dockerManager.getOrCreateContainerInPool('/path/to/script');
             
             // Should create new container since existing one is dead
             expect(mockDocker.createContainer).toHaveBeenCalled();
