@@ -16,7 +16,8 @@
     "start": "node examples/server.js",
     "example": "node examples/server.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [
     "serverless",
