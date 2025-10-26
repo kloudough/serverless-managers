@@ -1,6 +1,6 @@
 const express = require('express');
 const greet = require('./greet');
-const { parentPort, workerData } = require('worker_threads');
+const { workerData } = require('worker_threads');
 
 const PORT =
     (workerData && workerData.port) ||
