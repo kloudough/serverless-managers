@@ -1,18 +1,17 @@
-const express = require('express');
+const http = require('http');
 const greet = require('./greet');
 const { workerData } = require('worker_threads');
 
-const PORT =
+const port =
     (workerData && workerData.port) ||
     process.argv[2] ||
-    process.env.PORT ||
-    9000;
+    8080;
 
-const app = express();
-app.get('/', (req, res) => {
-    res.send(greet('World from anotherApp.js!'));
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(greet('World from anotherApp.js!'));
 });
 
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+server.listen(port, () => {
+    console.log(`Server running on port ${port}`);
 });
