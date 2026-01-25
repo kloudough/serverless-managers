@@ -16,8 +16,7 @@ const makeRequest = (port) => {
 };
 
 const scriptDirPath = path.join(__dirname, '../../examples/scripts');
-// Use simple.js which has no dependencies (like express) so it works in node:alpine
-const scriptFiles = ['simple.js', 'greet.js'];
+const scriptFiles = ['index.js', 'greet.js'];
 const managerConfig = { scriptDirPath, scriptFiles };
 
 describe('System Integration Tests', () => {

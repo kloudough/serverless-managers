@@ -64,8 +64,8 @@ describe('DockerManager', () => {
 
     describe('constructor', () => {
         test('should initialize with default options', () => {
-            expect(dockerManager.defaultContainerName).toBe('my-nodejs-express');
-            expect(dockerManager.defaultImageName).toBe('my-nodejs-express');
+            expect(dockerManager.defaultContainerName).toBe('node-runner');
+            expect(dockerManager.defaultImageName).toBe('node:22-alpine');
             expect(dockerManager.maxPoolSize).toBe(3);
             expect(dockerManager.poolCheckInterval).toBe(10000);
             expect(dockerManager.containerTimeout).toBe(30000);
@@ -111,7 +111,7 @@ describe('DockerManager', () => {
             const result = await dockerManager.createContainer(3000, 'test-container', '/path/to/script', ['index.js']);
 
             expect(mockDocker.createContainer).toHaveBeenCalledWith({
-                Image: 'my-nodejs-express',
+                Image: 'node:22-alpine',
                 name: 'test-container',
                 ExposedPorts: { '9000/tcp': {} },
                 HostConfig: {
@@ -228,7 +228,7 @@ describe('DockerManager', () => {
             expect(getAvailablePort).toHaveBeenCalled();
             expect(mockDocker.createContainer).toHaveBeenCalled();
             expect(dockerManager.containerPool).toHaveLength(1);
-            expect(result.name).toMatch(/my-nodejs-express-3000-\d+/);
+            expect(result.name).toMatch(/node-runner-3000-\d+/);
             expect(result.port).toBe(3000);
             expect(result.id).toBe('mock-container-id');
             expect(result.createdAt).toEqual(expect.any(Number));
@@ -363,7 +363,7 @@ describe('DockerManager', () => {
             // Expect to terminate the NEWLY created container (because pool is full)
             // And return the one from pool
             expect(dockerManager.terminateResource).toHaveBeenCalledWith(
-                expect.objectContaining({ name: expect.stringMatching(/my-nodejs-express-3000-\d+/) })
+                expect.objectContaining({ name: expect.stringMatching(/node-runner-3000-\d+/) })
             );
             expect(result.name).toBe('race-container');
         });
